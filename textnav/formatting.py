@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from textnav.model import DocType, DocumentAnalysis
+from textnav.model import DocType, DocumentAnalysis, Extraction, ExtractionState
 
 
 def format_date(value: date) -> str:
@@ -43,3 +43,16 @@ def document_label(analysis: DocumentAnalysis) -> str:
             return f"Письмо{dated}"
         case _:
             return f"Документ «{analysis.source.filename}»"
+
+
+def describe_extraction(extraction: Extraction) -> str:
+    """Value of a change for messages: the value itself or why it is not shown."""
+    if extraction.state is ExtractionState.FOUND:
+        return format_value(extraction.value)
+    if extraction.state is ExtractionState.AMBIGUOUS:
+        return "несколько разных значений"
+    return "значение не распознано"
+
+
+def lower_first(text: str) -> str:
+    return text[:1].lower() + text[1:]

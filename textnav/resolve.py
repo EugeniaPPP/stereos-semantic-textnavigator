@@ -9,7 +9,7 @@ from dataclasses import replace
 from datetime import date
 from itertools import groupby
 
-from textnav.formatting import document_label, format_date, format_value
+from textnav.formatting import describe_extraction, document_label, format_date, lower_first
 from textnav.model import (
     Alert,
     AlertCode,
@@ -92,7 +92,7 @@ def resolve_contract(
             if status is ContractStatus.NOT_IN_FORCE
             else ValueState.NEEDS_REVIEW
         )
-        shown = TermValue(state, reason=_lower_first(status_reason))
+        shown = TermValue(state, reason=lower_first(status_reason))
         terms = {name: replace(term, effective=shown) for name, term in terms.items()}
     alerts += _supplier_alerts(contract, change_docs)
 
@@ -353,14 +353,14 @@ def _change_alerts(
         ):
             continue
         if change.status is ChangeStatus.NEEDS_REVIEW:
-            message = f"{label}: {_lower_first(change.reason)} — изменение не применено"
+            message = f"{label}: {lower_first(change.reason)} — изменение не применено"
             alerts.append(Alert(AlertCode.CHANGE_NEEDS_REVIEW, message, doc_id=doc_id))
             continue
 
         if change.status is ChangeStatus.NOT_YET_EFFECTIVE:
             code = AlertCode.CHANGE_PENDING
             prefix = (
-                f"Подписанное изменение ещё не действует — {label} ({_lower_first(change.reason)})"
+                f"Подписанное изменение ещё не действует — {label} ({lower_first(change.reason)})"
             )
         else:
             code = AlertCode.CHANGE_PROPOSAL
@@ -368,7 +368,7 @@ def _change_alerts(
         if not change.changes and change.analysis.change_clauses:
             alerts.append(Alert(code, f"{prefix}: значения не распознаны", doc_id=doc_id))
         for field, extraction in change.changes.items():
-            message = f"{prefix}: {labels.get(field, field)} → {_describe(extraction)}"
+            message = f"{prefix}: {labels.get(field, field)} → {describe_extraction(extraction)}"
             alerts.append(Alert(code, message, field, doc_id, extraction.citations))
     return alerts
 
@@ -416,19 +416,7 @@ def _supplier_alerts(contract: DocumentAnalysis, change_docs: tuple[ChangeDoc, .
     return alerts
 
 
-def _describe(extraction: Extraction) -> str:
-    if extraction.state is FOUND:
-        return format_value(extraction.value)
-    if extraction.state is ExtractionState.AMBIGUOUS:
-        return "несколько разных значений"
-    return "значение не распознано"
-
-
 def _clause_name(change: ChangeDoc, clause: ChangeClause) -> str:
     own = change.analysis.source.paragraphs[clause.citation.paragraph].clause
     name = f"п. {own}" if own else "пункт без номера"
     return f"{name} (изменяет п. {clause.target_clause} договора)" if clause.target_clause else name
-
-
-def _lower_first(text: str) -> str:
-    return text[:1].lower() + text[1:]
