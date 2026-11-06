@@ -115,3 +115,20 @@ class DocumentMeta:
     doc_date: Extraction
     signature: Signature
     effective_date: Extraction
+
+
+@dataclass(frozen=True, slots=True)
+class ChangeClause:
+    """A paragraph of a change document that intends to change the contract."""
+
+    citation: Citation
+    target_clause: str | None  # contract clause it rewrites, e.g. "2.1" in "Пункт 2.1 ... изложить"
+    fields: tuple[str, ...]  # registry fields touched: value found or mentioned without one
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentAnalysis:
+    source: SourceDocument
+    meta: DocumentMeta
+    terms: dict[str, Extraction]  # keyed by FieldSpec.name, in registry order
+    change_clauses: tuple[ChangeClause, ...]
