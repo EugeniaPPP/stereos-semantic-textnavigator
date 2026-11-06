@@ -4,7 +4,18 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from textnav.model import DocType, DocumentAnalysis, Extraction, ExtractionState
+from textnav.model import (
+    DocType,
+    DocumentAnalysis,
+    Extraction,
+    ExtractionState,
+    TermValue,
+    ValueState,
+)
+
+NO_DATA_TEXT = "Нет данных"
+NEEDS_REVIEW_TEXT = "Требует проверки"
+NOT_IN_FORCE_TEXT = "—"
 
 
 def format_date(value: date) -> str:
@@ -56,3 +67,14 @@ def describe_extraction(extraction: Extraction) -> str:
 
 def lower_first(text: str) -> str:
     return text[:1].lower() + text[1:]
+
+
+def value_text(value: TermValue) -> str:
+    """How a value is shown to the user on the check date."""
+    if value.state is ValueState.VALUE:
+        return format_value(value.value)
+    return {
+        ValueState.NO_DATA: NO_DATA_TEXT,
+        ValueState.NEEDS_REVIEW: NEEDS_REVIEW_TEXT,
+        ValueState.NOT_IN_FORCE: NOT_IN_FORCE_TEXT,
+    }[value.state]

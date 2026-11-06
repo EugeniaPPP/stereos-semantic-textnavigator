@@ -9,9 +9,10 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from tests.builders import contract_text, resolve_one
+from textnav.formatting import value_text
 from textnav.model import TermValue, ValueState
 from textnav.terms import TERM_REGISTRY
-from textnav.ui.main_view import table_rows, value_text
+from textnav.ui.main_view import table_rows
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = str(ROOT / "app.py")
@@ -163,3 +164,65 @@ def test_unreadable_file_is_listed_for_attention(monkeypatch, tmp_path):
 
     assert len(_table(app)) == 3
     assert "broken.txt" in _markdown(app)
+
+
+# --- details and source viewer ----------------------------------------------------
+
+
+def _show_buttons(app: AppTest):
+    return [button for button in app.button if button.label == "Показать в документе"]
+
+
+def _captions(app: AppTest) -> str:
+    return "\n".join(element.value for element in app.caption)
+
+
+def test_details_show_value_basis_and_change(monkeypatch):
+    text = _markdown(_run(monkeypatch, DOCUMENTS))
+
+    assert "**Сумма: 1 380 000 ₽**" in text
+    assert "Основание: Допсоглашение № 1 от 01.03.2026 (`02_amendment_signed.txt`)." in text
+    assert "По договору: 1 200 000 ₽." in text
+    assert "**Срок поставки: 30.04.2026**" in text
+    assert "По договору: 15.04.2026." in text
+
+
+def test_details_group_changes_by_status(monkeypatch):
+    text = _markdown(_run(monkeypatch, DOCUMENTS))
+    applied = text.index("**Применённые изменения**")
+    pending = text.index("**Подписанные, но не вступившие в силу**")
+    proposals = text.index("**Несогласованные предложения**")
+    review = text.index("**Требуют проверки**")
+
+    assert applied < pending < proposals < review
+    assert "Допсоглашение № 1 от 01.03.2026" in text[applied:pending]
+    assert "Проект допсоглашения № 2 от 06.03.2026" in text[proposals:review]
+    assert "сумма → 1 450 000 ₽" in text[proposals:review]
+
+
+def test_details_quote_marks_the_exact_value(monkeypatch):
+    app = _run(monkeypatch, DOCUMENTS)
+    app.selectbox(key="details_contract").select("STN-102").run()
+    text = _markdown(app)
+
+    assert "**840 000 (восемьсот сорок тысяч) рублей**" in text
+    assert "`03_contract.txt`, абзац 6, п. 2.1" in text
+
+
+def test_details_for_missing_value_cite_the_reason(monkeypatch):
+    app = _run(monkeypatch, DOCUMENTS)
+    app.selectbox(key="details_contract").select("STN-103").run()
+    text = _markdown(app)
+
+    assert "**Сумма: Нет данных**" in text
+    assert "Числовое значение стоимости в тексте договора не указано." in text
+
+
+def test_viewer_opens_the_cited_paragraph(monkeypatch):
+    app = _run(monkeypatch, DOCUMENTS)
+    assert "Источник: `02_amendment_signed.txt`, абзац 5, п. 1" in _captions(app)
+
+    app.selectbox(key="details_contract").select("STN-102").run()
+    _show_buttons(app)[1].click().run()  # the delivery date quote
+
+    assert "Источник: `03_contract.txt`, абзац 8, п. 3.1" in _captions(app)

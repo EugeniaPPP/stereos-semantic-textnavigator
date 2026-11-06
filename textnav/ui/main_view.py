@@ -11,11 +11,14 @@ import pandas as pd
 import streamlit as st
 
 from textnav.formatting import (
+    NEEDS_REVIEW_TEXT,
+    NO_DATA_TEXT,
+    NOT_IN_FORCE_TEXT,
     describe_extraction,
     document_label,
     format_date,
-    format_value,
     lower_first,
+    value_text,
 )
 from textnav.model import (
     AlertCode,
@@ -25,11 +28,10 @@ from textnav.model import (
     ChangeStatus,
     ContractStatus,
     ContractView,
-    TermValue,
-    ValueState,
 )
 from textnav.pipeline import analyze, contracts_with_delivery_before, unagreed_changes
 from textnav.terms import TERM_REGISTRY, FieldSpec
+from textnav.ui.details_view import render_details
 
 COL_NUMBER = "Договор"
 COL_SUPPLIER = "Поставщик"
@@ -37,14 +39,9 @@ COL_UNAGREED = "Несогласованные изменения"
 COL_STATUS = "Статус и предупреждения"
 
 NBSP = "\u00a0"  # keeps "1 000 000 ₽" and "Нет данных" on one line in table cells
-NO_DATA = "Нет данных"
-NEEDS_REVIEW = "Требует проверки"
-NOT_IN_FORCE = "—"
-_VALUE_TEXT = {
-    ValueState.NO_DATA: NO_DATA,
-    ValueState.NEEDS_REVIEW: NEEDS_REVIEW,
-    ValueState.NOT_IN_FORCE: NOT_IN_FORCE,
-}
+NO_DATA = NO_DATA_TEXT
+NEEDS_REVIEW = NEEDS_REVIEW_TEXT
+NOT_IN_FORCE = NOT_IN_FORCE_TEXT
 
 REASON_LABELS = {
     AttentionReason.ORPHAN: "исходный договор не загружен",
@@ -66,12 +63,6 @@ _QUIET_STYLE = "color: #5C6670; font-style: italic"
 
 
 # --- pure helpers (unit-tested) -----------------------------------------------
-
-
-def value_text(value: TermValue) -> str:
-    if value.state is ValueState.VALUE:
-        return format_value(value.value)
-    return _VALUE_TEXT[value.state]
 
 
 def unagreed_text(view: ContractView, registry: tuple[FieldSpec, ...]) -> str:
@@ -170,6 +161,8 @@ def render(
         f"Документов, требующих внимания: {len(result.attention)}."
     )
     _render_contracts(result, registry)
+    if result.contracts:
+        render_details(result, registry)
     _render_attention(result, registry)
 
 
