@@ -155,7 +155,18 @@ def render(
         )
         return
 
-    result = analyze(files, check_date, registry)
+    if check_date is None:
+        st.info("Укажите дату проверки: условия договоров определяются на конкретную дату.")
+        return
+    try:
+        result = analyze(files, check_date, registry)
+    except Exception as error:  # last resort: the page explains instead of showing a traceback
+        st.error(
+            f"Не удалось обработать документы: внутренняя ошибка ({type(error).__name__}). "
+            "Уберите последний добавленный файл и повторите; если ошибка останется, "
+            "сообщите разработчику, какие файлы были загружены."
+        )
+        return
     st.caption(
         f"Файлов: {len(files)}. Договоров: {len(result.contracts)}. "
         f"Документов, требующих внимания: {len(result.attention)}."
@@ -185,7 +196,9 @@ def _render_contracts(result: AnalysisResult, registry: tuple[FieldSpec, ...]) -
         )
 
     contracts: list[ContractView] | tuple[ContractView, ...] = result.contracts
-    if enabled:
+    if enabled and before is None:
+        st.caption("Укажите дату, чтобы применить фильтр.")
+    elif enabled:
         contracts, excluded = contracts_with_delivery_before(result, before)
         note = f"Срок поставки раньше {format_date(before)}: договоров {len(contracts)}."
         if excluded:

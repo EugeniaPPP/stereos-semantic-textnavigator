@@ -226,3 +226,27 @@ def test_viewer_opens_the_cited_paragraph(monkeypatch):
     _show_buttons(app)[1].click().run()  # the delivery date quote
 
     assert "Источник: `03_contract.txt`, абзац 8, п. 3.1" in _captions(app)
+
+
+# --- error handling -------------------------------------------------------------
+
+
+def test_unexpected_analysis_error_is_explained_not_raised(monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("textnav.ui.main_view.analyze", broken)
+    app = _run(monkeypatch, DOCUMENTS)
+
+    assert "Не удалось обработать документы" in app.error[0].value
+    assert len(app.table) == 0
+
+
+def test_cleared_check_date_asks_for_a_date(monkeypatch):
+    app = _run(monkeypatch, DOCUMENTS)
+
+    app.date_input(key="check_date").set_value(None).run()
+
+    assert not app.exception
+    assert "Укажите дату проверки" in app.info[0].value
+    assert len(app.table) == 0
