@@ -33,7 +33,7 @@
 | `linking.py` | дубликаты по `doc_id`; группировка по номеру договора; UNKNOWN_TYPE и UNLINKED в «Документы, требующие внимания»; порядок по номеру (натуральный), дате документа и `doc_id` |
 | `resolve.py` | статусы договора и документов-изменений на дату, действующие значения полей, предупреждения (`Alert`), ORPHAN |
 | `formatting.py` | формат сумм («1 380 000 ₽»), дат и названий документов («Допсоглашение № 1 от 01.03.2026») — для сообщений ядра и UI |
-| `pipeline.py` | `analyze(files, check_date) → AnalysisResult` |
+| `pipeline.py` | `analyze(files, check_date) → AnalysisResult` (ошибки чтения и анализа → `READ_ERROR`); запросы для UI: `contracts_with_delivery_before(result, day)` (строго `<`, только `VALUE`; возвращает и число исключённых) и `unagreed_changes(view, field)` (`CHANGE_PROPOSAL`) |
 | `ui/` | `main_view.py`, `details_view.py`, `viewer.py` |
 
 ## Модель данных

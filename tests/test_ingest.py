@@ -135,7 +135,7 @@ def test_line_without_terminal_punctuation_is_one_sentence():
 
 
 def test_utf8_bom_is_removed():
-    doc = _read("﻿ДОГОВОР".encode())
+    doc = _read("\ufeffДОГОВОР".encode())
 
     assert doc.text == "ДОГОВОР"
     assert doc.encoding == "utf-8"

@@ -28,7 +28,7 @@ def format_value(value: Any) -> str:
 
 
 def document_label(analysis: DocumentAnalysis) -> str:
-    """Short human name: "Допсоглашение № 1 от 01.03.2026", "Письмо от 05.03.2026"."""
+    """Short human name: "Допсоглашение № 3 от 31.12.2030", "Письмо от 31.12.2030"."""
     meta = analysis.meta
     number = f" № {meta.number.value}" if meta.number.value else ""
     dated = f" от {format_date(meta.doc_date.value)}" if meta.doc_date.value else ""

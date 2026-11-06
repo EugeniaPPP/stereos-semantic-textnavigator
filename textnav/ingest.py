@@ -26,7 +26,7 @@ _ALLOWED_CONTROL_CHARS = frozenset("\n\t\f\v")
 _CLAUSE = re.compile(r"(?:(\d{1,3}(?:\.\d{1,3})+)\.?|(\d{1,3})\.)\s+(?=\S)")
 
 # Sentence boundary: terminal punctuation, optional closing quotes/brackets, whitespace,
-# then an uppercase letter (optionally after an opening quote). Dates ("15.04.2026") and
+# then an uppercase letter (optionally after an opening quote). Dates ("31.12.2030") and
 # references ("п. 2.1") are not split because no whitespace + uppercase letter follows.
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?…])([»\"')\]]*)\s+(?=[«\"(]?[A-ZА-ЯЁ])")
 

@@ -12,7 +12,7 @@ from textnav.patterns import MONEY, find_dates, normalize_number, parse_date, pa
     [
         ("1 200 000 (один миллион двести тысяч) рублей", Decimal("1200000")),
         ("840 000 рублей", Decimal("840000")),
-        ("1 450 000 руб.", Decimal("1450000")),
+        ("1\u00a0450\u00a0000 руб.", Decimal("1450000")),
         ("1 200 000,50 руб.", Decimal("1200000.50")),
         ("252000 ₽", Decimal("252000")),
     ],

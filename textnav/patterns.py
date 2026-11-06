@@ -25,11 +25,11 @@ _MONTHS = {
 
 # --- money --------------------------------------------------------------------
 
-_DIGIT_GROUP_SPACE = "[   ]"
+_DIGIT_GROUP_SPACE = "[ \u00a0\u202f]"
 _AMOUNT = rf"(?:\d{{1,3}}(?:{_DIGIT_GROUP_SPACE}\d{{3}})+|\d+)(?:,\d{{1,2}})?"
 _RUBLES = r"(?:рубл(?:ей|я|ь)(?![а-яё])|руб(?![а-яё])\.?|₽)"
 
-# "1 200 000 (один миллион двести тысяч) рублей", "840 000 руб.", "252000 ₽"
+# "1 000 000 (один миллион) рублей", "500 000 руб.", "75000 ₽"
 MONEY = rf"(?<![\d.,]){_AMOUNT}(?:\s*\([^()]*\))?\s*{_RUBLES}"
 
 _AMOUNT_PARTS = re.compile(rf"(\d{{1,3}}(?:{_DIGIT_GROUP_SPACE}\d{{3}})+|\d+)(?:,(\d{{1,2}}))?")
@@ -48,7 +48,7 @@ def parse_money(text: str) -> Decimal | None:
 
 _MONTH_NAMES = "|".join(_MONTHS)
 
-# "15.04.2026", "5.3.2026", "30 апреля 2026", "«1» марта 2026"
+# "31.12.2030", "5.3.2030", "30 апреля 2030", "«1» марта 2030"
 DATE = (
     rf"(?<![\d.])(?:\d{{1,2}}\.\d{{1,2}}\.\d{{4}}|«?\d{{1,2}}»?\s+(?:{_MONTH_NAMES})\s+\d{{4}})"
     r"(?!\d)"
@@ -91,7 +91,7 @@ def normalize_number(raw: str) -> str:
 
 
 def looks_like_number(token: str, after_number_sign: bool) -> bool:
-    """A number has a digit; without a preceding "№" it must also have a letter ("STN-101")."""
+    """A number has a digit; without a preceding "№" it must also have a letter ("AB-7")."""
     has_digit = any(char.isdigit() for char in token)
     has_letter = any(char.isalpha() for char in token)
     return has_digit and (after_number_sign or has_letter)

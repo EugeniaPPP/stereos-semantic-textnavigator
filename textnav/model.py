@@ -241,3 +241,10 @@ class AttentionItem:
     filename: str
     analysis: DocumentAnalysis | None = None
     change: ChangeDoc | None = None  # status of an orphan change document
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisResult:
+    check_date: date
+    contracts: tuple[ContractView, ...]
+    attention: tuple[AttentionItem, ...]  # "Документы, требующие внимания"
