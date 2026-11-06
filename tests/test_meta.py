@@ -276,3 +276,14 @@ def test_different_effective_dates_are_ambiguous():
     )
 
     assert _meta(text).effective_date.state == State.AMBIGUOUS
+
+
+def test_effective_on_signing_takes_the_signing_date():
+    meta = _meta(
+        "ДОПОЛНИТЕЛЬНОЕ СОГЛАШЕНИЕ № 1 К ДОГОВОРУ A-1\n"
+        "Статус: подписано обеими сторонами 01.03.2026.\n"
+        "2. Настоящее соглашение вступает в силу с момента подписания."
+    )
+
+    assert meta.effective_date.value == date(2026, 3, 1)
+    assert "с момента подписания" in meta.effective_date.citations[0].quote

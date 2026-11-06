@@ -16,7 +16,7 @@
 1. Результат зависит только от содержимого файлов и даты проверки D. Идентичность документа — хэш содержимого; имя файла используется только для отображения.
 2. Лучше «нет значения», чем неверное: `NO_DATA` / `NEEDS_REVIEW` с причиной и цитатой.
 3. У каждого значения есть `Citation`; выполняется `text[start:end] == quote`.
-4. Контекст правила — предложение. Слова-исключения (veto) проверяются в том же предложении.
+4. Контекст правила — предложение. Слова-исключения (veto) проверяются в тексте предложения до значения.
 5. Условия задаются реестром `TERM_REGISTRY`. Движок, резолвер и детали UI обходят его обобщённо.
 
 ## Модули
@@ -30,10 +30,11 @@
 | `meta.py` | тип документа, собственный номер, ссылка на договор, поставщик, дата документа, подпись, дата вступления в силу |
 | `terms.py` | `Rule`, `FieldSpec`, `TERM_REGISTRY`, движок извлечения условий, пункты-изменения |
 | `analyze.py` | `SourceDocument → DocumentAnalysis` |
-| `linking.py` | группировка документов по договору, дубликаты, «Документы, требующие внимания» |
-| `resolve.py` | статусы договора и документов-изменений на дату, действующие значения, предупреждения |
-| `pipeline.py` | `analyze(files, check_date) → AnalysisResult`, детерминированная сортировка |
-| `ui/` | `formatting.py` (формат сумм, дат, статусов), `main_view.py`, `details_view.py`, `viewer.py` |
+| `linking.py` | дубликаты по `doc_id`; группировка по номеру договора; UNKNOWN_TYPE и UNLINKED в «Документы, требующие внимания»; порядок по номеру (натуральный), дате документа и `doc_id` |
+| `resolve.py` | статусы договора и документов-изменений на дату, действующие значения полей, предупреждения (`Alert`), ORPHAN |
+| `formatting.py` | формат сумм («1 380 000 ₽»), дат и названий документов («Допсоглашение № 1 от 01.03.2026») — для сообщений ядра и UI |
+| `pipeline.py` | `analyze(files, check_date) → AnalysisResult` |
+| `ui/` | `main_view.py`, `details_view.py`, `viewer.py` |
 
 ## Модель данных
 
@@ -52,13 +53,18 @@ ChangeClause(citation, target_clause: str | None, fields: tuple[str, ...])
 DocumentAnalysis(source, meta: DocumentMeta, terms: dict[str, Extraction],
                  change_clauses: tuple[ChangeClause, ...])
 
+ContractGroup(number, contracts: tuple[DocumentAnalysis, ...], changes: tuple[DocumentAnalysis, ...])
 ChangeStatus = APPLIED | NOT_YET_EFFECTIVE | PROPOSAL | NEEDS_REVIEW
-ChangeDoc(doc, status, reason, changes: dict[str, Extraction])
+ChangeDoc(analysis, status, reason, changes: dict[str, Extraction])  # changes — затронутые поля
 ContractStatus = IN_FORCE | NOT_IN_FORCE | NEEDS_REVIEW
-TermValue(state: VALUE | NO_DATA | NEEDS_REVIEW, value, citations, set_by_doc_id, reason)
-TermResolution(field, original: TermValue, effective: TermValue, history)
-ContractView(number, supplier, status, status_reason, terms, change_docs, warnings, documents)
-AttentionItem(doc, reason: ORPHAN | UNLINKED | UNKNOWN_TYPE | READ_ERROR | DUPLICATE | CONFLICTING_CONTRACT)
+TermValue(state: VALUE | NO_DATA | NEEDS_REVIEW | NOT_IN_FORCE, value, citations, source_doc_id, reason)
+TermResolution(field, label, original, applied, effective, changed_by: tuple[doc_id, ...])
+  # original — по договору; applied — после применённых ДС (последнее подтверждённое);
+  # effective — что показывается на дату D
+Alert(code: AlertCode, message, field, doc_id, citations)
+ContractView(number, supplier, status, status_reason, contracts, terms, change_docs, alerts)
+AttentionItem(reason: ORPHAN | UNLINKED | UNKNOWN_TYPE | READ_ERROR | DUPLICATE, message, filename,
+              analysis, change: ChangeDoc | None)               # change — статус ORPHAN-документа
 AnalysisResult(check_date, contracts, attention)
 
 Rule(name, pattern)                                                     # шаблон с группой (?P<value>…)
@@ -96,7 +102,7 @@ TERM_REGISTRY = (TOTAL_COST, DELIVERY_DATE)
   - Дата подписания — единственная дата в строках статуса (для `SIGNED_BOTH` и `SIGNED_PARTIAL`). Несколько разных дат → дата неизвестна.
 - **Дата вступления в силу** — «<договор | соглашение | изменения> … вступает в силу [с] <дата>» или «… действует / применяется с <дата>».
   - Подлежащее обязательно, чтобы «Цена действует с …» не считалась датой вступления.
-  - «С момента подписания» даты не даёт — используется дата подписания.
+  - «Вступает в силу с момента (даты, дня) подписания» → дата подписания из строки статуса; если её нет, даты нет.
   - Несколько разных дат → `AMBIGUOUS`.
 - **Условия** (`terms.py`) извлекаются по реестру `FieldSpec`; сам движок полей не знает.
   - **Где ищем.** В договоре — во всех предложениях. В ДС, проекте и письме — только в пунктах-изменениях (см. ниже); значения вне них («Общая стоимость договора составляет …») игнорируются.
@@ -121,18 +127,18 @@ TERM_REGISTRY = (TOTAL_COST, DELIVERY_DATE)
 ### Договор
 
 - `IN_FORCE` — `SIGNED_BOTH`, подписан ≤ D, и дата вступления в силу не указана либо она ≤ D.
-- `NOT_IN_FORCE` с причиной: «подписан после даты проверки», «подписан, вступает в силу <дата>» или «подписан одной стороной». Строка остаётся в таблице, сумма и срок показываются как «—», в фильтр по сроку договор не попадает.
-- `NEEDS_REVIEW` в одном из случаев:
+- `NOT_IN_FORCE` с причиной: «подписан после даты проверки», «подписан, вступает в силу <дата>» или «подписан одной стороной». Поля получают `effective = NOT_IN_FORCE`: в таблице «—», в фильтр по сроку договор не попадает. Значения из текста остаются в `applied` для деталей.
+- `NEEDS_REVIEW` в одном из случаев (поля получают `effective = NEEDS_REVIEW`):
   - подпись `UNKNOWN`;
-  - дата подписания или вступления в силу неизвестна либо неоднозначна;
+  - дата подписания неизвестна или дата вступления в силу неоднозначна;
   - тип «договор» при статусе `NOT_SIGNED` или «проект» (противоречие);
-  - загружены конфликтующие дубликаты.
+  - загружено несколько разных договоров с одним номером.
 
 ### Документ-изменение
 
 | Тип \ подпись | SIGNED_BOTH | SIGNED_PARTIAL | NOT_SIGNED | UNKNOWN |
 |---|---|---|---|---|
-| `AMENDMENT` | подписано ≤ D и вступило ≤ D → `APPLIED`; подписано или вступает позже D → `NOT_YET_EFFECTIVE`; дата подписания или вступления неизвестна → `NEEDS_REVIEW` | `PROPOSAL` | `NEEDS_REVIEW` (противоречие тип ↔ статус) | `NEEDS_REVIEW` |
+| `AMENDMENT` | подписано ≤ D и вступило ≤ D → `APPLIED`; подписано или вступает позже D → `NOT_YET_EFFECTIVE`; дата подписания или вступления неизвестна либо неоднозначна → `NEEDS_REVIEW` | `PROPOSAL` | `NEEDS_REVIEW` (противоречие тип ↔ статус) | `NEEDS_REVIEW` |
 | `AMENDMENT_DRAFT` | `NEEDS_REVIEW` (противоречие) | `PROPOSAL` | `PROPOSAL` | `PROPOSAL` |
 | `LETTER` | `PROPOSAL` (статус подписи не учитывается) | | | |
 
@@ -141,15 +147,29 @@ TERM_REGISTRY = (TOTAL_COST, DELIVERY_DATE)
 Правила одинаковы для всех полей реестра.
 
 1. Исходное значение берётся из договора.
-2. Затем по порядку дат вступления применяются изменения со статусом `APPLIED`. Обновляются только затронутые поля:
+2. Затем применяются изменения со статусом `APPLIED` — по дате вступления в силу (затем по дате подписания и `doc_id`), а не по номеру ДС или порядку файлов. Обновляются только затронутые поля:
    - `FOUND` → новое значение; источником становится это ДС;
    - `AMBIGUOUS`, `UNPARSED` или ДС меняет пункт договора, где было найдено поле, но значения не содержит → `NEEDS_REVIEW`. Более позднее применённое ДС с чётким значением перекрывает это состояние; история сохраняется;
    - одна дата вступления и разные значения поля → `NEEDS_REVIEW` без тай-брейков.
-3. Документ со статусом `NEEDS_REVIEW`, затрагивающий поле, переводит поле в `NEEDS_REVIEW`. Изменение не применяется. В деталях показаны последнее подтверждённое значение и неподтверждённое.
-4. `NOT_YET_EFFECTIVE` и `PROPOSAL` значения не меняют и дают разные предупреждения: «Подписано, вступает в силу <дата>» и «Несогласованное предложение».
+3. Документ со статусом `NEEDS_REVIEW`, затрагивающий поле, переводит `effective` в `NEEDS_REVIEW`. Изменение не применяется: последнее подтверждённое значение остаётся в `applied`.
+4. `NOT_YET_EFFECTIVE` и `PROPOSAL` значения не меняют.
 5. Документы с датой позже D видны в деталях, но на таблицу не влияют. Исключение — подписанные ДС: для них решают даты подписания и вступления в силу.
-6. Пункт-изменение применённого ДС, в котором нет известных полей → предупреждение «нераспознанное изменение п. N» на уровне договора.
-7. ДС без договора → `ORPHAN` в разделе «Документы, требующие внимания», условия не определяются. Когда договор загружен, связь восстанавливается при пересчёте.
+6. ДС без договора → `ORPHAN` в разделе «Документы, требующие внимания»: документ обработан и получил `ChangeStatus`, но условия не определяются. Когда договор загружен, связь восстанавливается при пересчёте.
+
+### Предупреждения (`Alert`)
+
+| Код | Когда |
+|---|---|
+| `CONTRACT_NOT_IN_FORCE`, `CONTRACT_NEEDS_REVIEW` | статус договора не `IN_FORCE` (причина — в сообщении) |
+| `CHANGE_PENDING` | подписанное ДС ещё не действует — по одному на затронутое поле, с полем и значением |
+| `CHANGE_PROPOSAL` | несогласованное предложение (письмо, проект, подписано одной стороной) — по одному на затронутое поле |
+| `CHANGE_NEEDS_REVIEW` | изменение со статусом `NEEDS_REVIEW` не применено |
+| `FIELD_NEEDS_REVIEW` | `effective = NEEDS_REVIEW` у действующего договора (причина — в сообщении) |
+| `UNRECOGNIZED_CHANGE` | пункт-изменение применённого ДС без известных полей, не переписывающий пункт договора с известным полем |
+| `EMPTY_AMENDMENT` | применённое ДС без единого пункта-изменения |
+| `SUPPLIER_MISMATCH` | поставщик в документе-изменении не совпадает с поставщиком договора |
+
+Колонка «несогласованные изменения» и вопрос «есть ли несогласованные изменения срока» строятся по `CHANGE_PROPOSAL` и `CHANGE_PENDING` с нужным `field`.
 
 ## UI
 

@@ -132,3 +132,112 @@ class DocumentAnalysis:
     meta: DocumentMeta
     terms: dict[str, Extraction]  # keyed by FieldSpec.name, in registry order
     change_clauses: tuple[ChangeClause, ...]
+
+
+# --- resolution ---------------------------------------------------------------
+
+
+class ChangeStatus(StrEnum):
+    APPLIED = "applied"  # signed by both parties and in force on the check date
+    NOT_YET_EFFECTIVE = "not_yet_effective"  # signed by both, but signed or effective later
+    PROPOSAL = "proposal"  # not agreed: letter, unsigned draft, signed by one party
+    NEEDS_REVIEW = "needs_review"  # status or dates unreliable, or type contradicts status
+
+
+class ContractStatus(StrEnum):
+    IN_FORCE = "in_force"
+    NOT_IN_FORCE = "not_in_force"
+    NEEDS_REVIEW = "needs_review"
+
+
+class ValueState(StrEnum):
+    VALUE = "value"
+    NO_DATA = "no_data"
+    NEEDS_REVIEW = "needs_review"
+    NOT_IN_FORCE = "not_in_force"  # the contract itself is not in force on the check date
+
+
+class AlertCode(StrEnum):
+    CONTRACT_NOT_IN_FORCE = "contract_not_in_force"
+    CONTRACT_NEEDS_REVIEW = "contract_needs_review"
+    CHANGE_PENDING = "change_pending"  # signed, not yet effective
+    CHANGE_PROPOSAL = "change_proposal"  # not agreed
+    CHANGE_NEEDS_REVIEW = "change_needs_review"
+    FIELD_NEEDS_REVIEW = "field_needs_review"
+    UNRECOGNIZED_CHANGE = "unrecognized_change"
+    EMPTY_AMENDMENT = "empty_amendment"
+    SUPPLIER_MISMATCH = "supplier_mismatch"
+
+
+class AttentionReason(StrEnum):
+    ORPHAN = "orphan"  # processed, but its contract is not uploaded
+    UNLINKED = "unlinked"
+    UNKNOWN_TYPE = "unknown_type"
+    READ_ERROR = "read_error"
+    DUPLICATE = "duplicate"
+
+
+@dataclass(frozen=True, slots=True)
+class ContractGroup:
+    number: str
+    contracts: tuple[DocumentAnalysis, ...]  # base contract documents, normally exactly one
+    changes: tuple[DocumentAnalysis, ...]  # amendments, drafts, letters
+
+
+@dataclass(frozen=True, slots=True)
+class ChangeDoc:
+    analysis: DocumentAnalysis
+    status: ChangeStatus
+    reason: str
+    changes: dict[str, Extraction]  # fields this document touches
+
+
+@dataclass(frozen=True, slots=True)
+class TermValue:
+    state: ValueState
+    value: Any = None
+    citations: tuple[Citation, ...] = ()
+    source_doc_id: str | None = None  # document that established the value
+    reason: str = ""  # why NO_DATA / NEEDS_REVIEW
+
+
+@dataclass(frozen=True, slots=True)
+class TermResolution:
+    field: str
+    label: str
+    original: TermValue  # from the contract
+    applied: TermValue  # after applied amendments: the last confirmed value
+    effective: (
+        TermValue  # shown on the check date (NEEDS_REVIEW if an unreliable change touches it)
+    )
+    changed_by: tuple[str, ...]  # doc ids of applied amendments that touched the field
+
+
+@dataclass(frozen=True, slots=True)
+class Alert:
+    code: AlertCode
+    message: str
+    field: str | None = None
+    doc_id: str | None = None
+    citations: tuple[Citation, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ContractView:
+    number: str
+    supplier: Extraction
+    status: ContractStatus
+    status_reason: str
+    contracts: tuple[DocumentAnalysis, ...]
+    terms: dict[str, TermResolution]
+    change_docs: tuple[ChangeDoc, ...]
+    alerts: tuple[Alert, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AttentionItem:
+    reason: AttentionReason
+    message: str
+    filename: str
+    analysis: DocumentAnalysis | None = None
+    change: ChangeDoc | None = None  # status of an orphan change document

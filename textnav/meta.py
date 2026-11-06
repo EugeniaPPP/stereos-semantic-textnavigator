@@ -5,6 +5,7 @@ an UNKNOWN signature; applicability decisions are made later by the resolver.
 """
 
 import re
+from datetime import date
 
 from textnav.evidence import cite, collect, iter_sentences
 from textnav.model import (
@@ -67,6 +68,11 @@ _EFFECTIVE_DATE = re.compile(
     rf"\s+(?:с\s+)?(?P<value>{DATE})",
     _I,
 )
+_EFFECTIVE_ON_SIGNING = re.compile(
+    r"(?:договор|соглашени|изменени)\w*\b.{0,60}?вступ\w*\s+в\s+(?:законную\s+)?силу\s+"
+    r"(?P<value>с\s+(?:момента|даты|дня)\s+(?:(?:его|ее|её|их)\s+)?подписания)",
+    _I,
+)
 
 
 def extract_meta(doc: SourceDocument) -> DocumentMeta:
@@ -78,14 +84,15 @@ def extract_meta(doc: SourceDocument) -> DocumentMeta:
         )
     else:
         contract_number = _contract_reference(doc)
+    signature = _signature(doc)
     return DocumentMeta(
         doc_type=doc_type,
         number=number,
         contract_number=contract_number,
         supplier=_supplier(doc),
         doc_date=_doc_date(doc),
-        signature=_signature(doc),
-        effective_date=_effective_date(doc),
+        signature=signature,
+        effective_date=_effective_date(doc, signature),
     )
 
 
@@ -153,16 +160,29 @@ def _supplier(doc: SourceDocument) -> Extraction:
 
 
 def _doc_date(doc: SourceDocument) -> Extraction:
-    return _dates_by_pattern(doc, "doc_date", _DOC_DATE, anchored=True)
+    return collect("doc_date", _date_candidates(doc, _DOC_DATE, anchored=True))
 
 
-def _effective_date(doc: SourceDocument) -> Extraction:
-    return _dates_by_pattern(doc, "effective_date", _EFFECTIVE_DATE, anchored=False)
+def _effective_date(doc: SourceDocument, signature: Signature) -> Extraction:
+    """Explicit dates, or the signing date for "вступает в силу с момента подписания"."""
+    candidates = _date_candidates(doc, _EFFECTIVE_DATE, anchored=False)
+    if signature.date is not None:
+        for paragraph, span, sentence in iter_sentences(doc):
+            for match in _EFFECTIVE_ON_SIGNING.finditer(sentence):
+                citation = cite(
+                    doc,
+                    paragraph,
+                    span,
+                    span.start + match.start("value"),
+                    span.start + match.end("value"),
+                )
+                candidates.append((signature.date, citation))
+    return collect("effective_date", candidates)
 
 
-def _dates_by_pattern(
-    doc: SourceDocument, field: str, pattern: re.Pattern[str], anchored: bool
-) -> Extraction:
+def _date_candidates(
+    doc: SourceDocument, pattern: re.Pattern[str], anchored: bool
+) -> list[tuple[date, Citation]]:
     candidates = []
     for paragraph, span, sentence in iter_sentences(doc):
         matches = [pattern.match(sentence)] if anchored else pattern.finditer(sentence)
@@ -178,7 +198,7 @@ def _dates_by_pattern(
                 span.start + match.end("value"),
             )
             candidates.append((value, citation))
-    return collect(field, candidates)
+    return candidates
 
 
 def _signature(doc: SourceDocument) -> Signature:
