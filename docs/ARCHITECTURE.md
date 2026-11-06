@@ -24,7 +24,7 @@
 | Модуль | Ответственность |
 |---|---|
 | `model.py` | dataclasses и enums, без логики |
-| `ingest.py` | декодирование (utf-8-sig → cp1251), CRLF→LF, абзацы (непустые строки) с офсетами и номером пункта, предложения, `doc_id` |
+| `ingest.py` | декодирование (UTF-16 с BOM, UTF-8 с BOM и без, запасной вариант Windows-1251), CRLF→LF, NFC; отбраковка пустых и бинарных файлов (`ReadFailure`); абзацы с офсетами и номером пункта; предложения; `doc_id` |
 | `patterns.py` | примитивы и парсеры: денежная сумма, дата ДД.ММ.ГГГГ (с валидацией), номер договора и его нормализация |
 | `meta.py` | тип документа, собственный номер, ссылка на договор, поставщик, дата документа, подпись, дата вступления в силу |
 | `terms.py` | `Rule`, `FieldSpec`, `TERM_REGISTRY`, движок извлечения условий, пункты-изменения |
@@ -37,8 +37,10 @@
 ## Модель данных
 
 ```python
-Paragraph(index, start, end, clause: str | None, sentences)            # абзац = непустая строка; clause = «2.1»
-SourceDocument(doc_id, filename, text, paragraphs)                      # doc_id = sha256(text)[:12]
+Span(start, end)                                                        # [start, end) в SourceDocument.text
+Paragraph(index, start, end, text, clause: str | None, sentences: tuple[Span, ...])
+SourceDocument(doc_id, filename, text, encoding, paragraphs)            # doc_id = sha256(text)[:12]
+ReadFailure(filename, reason)                                           # файл не прочитан, остальные обрабатываются
 Citation(doc_id, filename, paragraph, start, end, quote, value_start, value_end)
 
 DocType = CONTRACT | AMENDMENT | AMENDMENT_DRAFT | LETTER | UNKNOWN
@@ -65,6 +67,10 @@ TERM_REGISTRY = (TOTAL_COST, DELIVERY_DATE)
 
 ## Извлечение
 
+- **Разбор текста:**
+  - абзац — непустая строка без пробелов по краям;
+  - номер пункта в начале строки («2.1.», «3.2.1», «1.») выделяется отдельно; число без точки («100 рублей») номером пункта не считается;
+  - граница предложения: «.», «!», «?» или «…», затем возможные закрывающие кавычки или скобки, пробел и заглавная буква (возможно, после открывающей кавычки). Поэтому даты («15.04.2026») и ссылки («п. 2.1») не разрываются.
 - **Тип документа** определяется по заголовку (первая непустая строка), по приоритету:
   - «ПРОЕКТ ДОПОЛНИТЕЛЬНОГО СОГЛАШЕНИЯ» → `AMENDMENT_DRAFT`;
   - «ДОПОЛНИТЕЛЬНОЕ СОГЛАШЕНИЕ» → `AMENDMENT`;
